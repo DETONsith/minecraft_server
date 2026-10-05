@@ -51,6 +51,7 @@ if command -v apt-get &> /dev/null && [ -n "$SUDO" -o "$(id -u)" -eq 0 ]; then
         net-tools \
         rclone \
         gnupg \
+        software-properties-common \
         lsb-release 2>/dev/null || true
     echo -e "${GREEN}✓ Dependências base verificadas.${NC}"
 fi
@@ -59,22 +60,19 @@ fi
 echo -e "\n${YELLOW}[3/5] Verificando Java 8 (Adoptium / OpenJDK 8)...${NC}"
 JAVA8_READY=false
 
-# Checar se já temos algum Java 8 no sistema
-CANDIDATES=(
-    "$ROOT_DIR/scripts/bin/java-8/bin/java"
-    "/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java"
-    "/usr/lib/jvm/java-8-openjdk-amd64/bin/java"
-    "/usr/lib/jvm/temurin-8-jdk-amd64/bin/java"
-    "/usr/lib/jvm/temurin-8-jre-amd64/bin/java"
-    /usr/local/sdkman/candidates/java/8.*/bin/java
-    "$HOME/.sdkman/candidates/java/8.*/bin/java"
-)
-
-for c in "${CANDIDATES[@]}"; do
-    if [ -x "$c" ]; then
-        V=$("$c" -version 2>&1 | head -n 1)
+for cand in \
+    /usr/local/sdkman/candidates/java/8*/bin/java \
+    "$HOME"/.sdkman/candidates/java/8*/bin/java \
+    /usr/lib/jvm/*java-8*/jre/bin/java \
+    /usr/lib/jvm/*java-8*/bin/java \
+    /usr/lib/jvm/*java-1.8*/bin/java \
+    /usr/lib/jvm/*temurin-8*/bin/java \
+    /usr/lib/jvm/*temurin-8*/jre/bin/java \
+    "$ROOT_DIR/scripts/bin/java-8/bin/java"; do
+    if [ -x "$cand" ]; then
+        V=$("$cand" -version 2>&1 | head -n 1)
         if [[ "$V" =~ "1.8." ]] || [[ "$V" =~ "\"8" ]]; then
-            echo -e "  ✓ Java 8 detectado em: ${GREEN}$c${NC} ($V)"
+            echo -e "  ✓ Java 8 detectado em: ${GREEN}$cand${NC} ($V)"
             JAVA8_READY=true
             break
         fi
@@ -90,32 +88,49 @@ if [ "$JAVA8_READY" = false ]; then
         sdk install java 8.0.412-tem -y 2>/dev/null || sdk install java 8.0.392-tem -y 2>/dev/null || true
     fi
 
-    # Tentar via Adoptium APT repo se tivermos permissão de sudo/root
+    # Tentar via PPA openjdk-r ou Adoptium APT repo
     if command -v apt-get &> /dev/null && [ -n "$SUDO" -o "$(id -u)" -eq 0 ]; then
-        echo "  -> Tentando instalar temurin-8-jdk via repositório Adoptium..."
-        wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public | $SUDO gpg --dearmor -o /etc/apt/trusted.gpg.d/adoptium.gpg 2>/dev/null || true
-        echo "deb https://packages.adoptium.net/artifactory/deb $(lsb_release -cs 2>/dev/null || echo 'jammy') main" | $SUDO tee /etc/apt/sources.list.d/adoptium.list 2>/dev/null || true
+        echo "  -> Tentando instalar pacotes Java 8 via APT..."
+        $SUDO add-apt-repository -y ppa:openjdk-r/ppa 2>/dev/null || true
         $SUDO apt-get update -y || true
-        $SUDO apt-get install -y temurin-8-jdk openjdk-8-jre-headless openjdk-8-jdk 2>/dev/null || true
+        $SUDO apt-get install -y openjdk-8-jre-headless openjdk-8-jdk temurin-8-jdk 2>/dev/null || true
     fi
 
-    # Fallback portátil definitivo: baixar JRE 8 direto da API da Adoptium
-    CANDIDATE_FOUND=false
-    for c in "${CANDIDATES[@]}"; do
-        if [ -x "$c" ]; then
-            V=$("$c" -version 2>&1 | head -n 1)
+    # Verificar se algum método acima funcionou
+    for cand in \
+        /usr/local/sdkman/candidates/java/8*/bin/java \
+        "$HOME"/.sdkman/candidates/java/8*/bin/java \
+        /usr/lib/jvm/*java-8*/jre/bin/java \
+        /usr/lib/jvm/*java-8*/bin/java \
+        /usr/lib/jvm/*java-1.8*/bin/java \
+        /usr/lib/jvm/*temurin-8*/bin/java \
+        /usr/lib/jvm/*temurin-8*/jre/bin/java \
+        "$ROOT_DIR/scripts/bin/java-8/bin/java"; do
+        if [ -x "$cand" ]; then
+            V=$("$cand" -version 2>&1 | head -n 1)
             if [[ "$V" =~ "1.8." ]] || [[ "$V" =~ "\"8" ]]; then
-                CANDIDATE_FOUND=true
+                JAVA8_READY=true
+                echo -e "  ✓ Java 8 instalado com sucesso: ${GREEN}$cand${NC} ($V)"
                 break
             fi
         fi
     done
 
-    if [ "$CANDIDATE_FOUND" = false ]; then
-        echo "  -> Baixando JRE 8 portátil oficial da Adoptium..."
+    # Fallback portátil definitivo: baixar JRE 8 direto da API da Adoptium para a arquitetura correta
+    if [ "$JAVA8_READY" = false ]; then
+        ARCH_RAW=$(uname -m)
+        ADOPTIUM_ARCH="x64"
+        case "$ARCH_RAW" in
+            aarch64|arm64|armv8*) ADOPTIUM_ARCH="aarch64" ;;
+            x86_64|amd64) ADOPTIUM_ARCH="x64" ;;
+        esac
+
+        echo "  -> Baixando JRE 8 portátil oficial da Adoptium ($ADOPTIUM_ARCH)..."
+        rm -rf "$ROOT_DIR/scripts/bin/java-8"
         mkdir -p "$ROOT_DIR/scripts/bin/java-8"
-        curl -Ls "https://api.adoptium.net/v3/binary/latest/8/ga/linux/x64/jre/hotspot/normal/eclipse" -o /tmp/java8.tar.gz
+        curl -Ls "https://api.adoptium.net/v3/binary/latest/8/ga/linux/${ADOPTIUM_ARCH}/jre/hotspot/normal/eclipse" -o /tmp/java8.tar.gz
         tar -xzf /tmp/java8.tar.gz -C "$ROOT_DIR/scripts/bin/java-8" --strip-components=1
+        chmod +x "$ROOT_DIR/scripts/bin/java-8/bin/"* 2>/dev/null || true
         rm -f /tmp/java8.tar.gz
         echo -e "${GREEN}✓ Java 8 portátil instalado em scripts/bin/java-8!${NC}"
     fi
@@ -126,7 +141,12 @@ echo -e "\n${YELLOW}[4/5] Verificando Playit.gg Agent portátil...${NC}"
 mkdir -p "$ROOT_DIR/scripts/bin"
 if [ ! -x "$ROOT_DIR/scripts/bin/playit" ]; then
     echo "Baixando binário portátil do playit-agent..."
-    curl -SsLo "$ROOT_DIR/scripts/bin/playit" https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
+    ARCH_RAW=$(uname -m)
+    PLAYIT_URL="https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64"
+    if [[ "$ARCH_RAW" =~ "aarch64" ]] || [[ "$ARCH_RAW" =~ "arm64" ]]; then
+        PLAYIT_URL="https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-aarch64"
+    fi
+    curl -SsLo "$ROOT_DIR/scripts/bin/playit" "$PLAYIT_URL"
     chmod +x "$ROOT_DIR/scripts/bin/playit"
     echo -e "${GREEN}✓ Playit.gg instalado em scripts/bin/playit!${NC}"
 else
