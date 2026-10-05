@@ -57,84 +57,8 @@ if command -v apt-get &> /dev/null && [ -n "$SUDO" -o "$(id -u)" -eq 0 ]; then
 fi
 
 # 3. Garantir Java 8 (Obrigatório para Forge 1.12.2 / Stoneblock)
-echo -e "\n${YELLOW}[3/5] Verificando Java 8 (Adoptium / OpenJDK 8)...${NC}"
-JAVA8_READY=false
-
-for cand in \
-    /usr/local/sdkman/candidates/java/8*/bin/java \
-    "$HOME"/.sdkman/candidates/java/8*/bin/java \
-    /usr/lib/jvm/*java-8*/jre/bin/java \
-    /usr/lib/jvm/*java-8*/bin/java \
-    /usr/lib/jvm/*java-1.8*/bin/java \
-    /usr/lib/jvm/*temurin-8*/bin/java \
-    /usr/lib/jvm/*temurin-8*/jre/bin/java \
-    "$ROOT_DIR/scripts/bin/java-8/bin/java"; do
-    if [ -x "$cand" ]; then
-        V=$("$cand" -version 2>&1 | head -n 1)
-        if [[ "$V" =~ "1.8." ]] || [[ "$V" =~ "\"8" ]]; then
-            echo -e "  ✓ Java 8 detectado em: ${GREEN}$cand${NC} ($V)"
-            JAVA8_READY=true
-            break
-        fi
-    fi
-done
-
-if [ "$JAVA8_READY" = false ]; then
-    # Tentar via SDKMAN se presente
-    if [ -s "/usr/local/sdkman/bin/sdkman-init.sh" ]; then
-        echo "  -> Tentando instalar Java 8 via SDKMAN..."
-        # shellcheck disable=SC1091
-        source "/usr/local/sdkman/bin/sdkman-init.sh"
-        sdk install java 8.0.412-tem -y 2>/dev/null || sdk install java 8.0.392-tem -y 2>/dev/null || true
-    fi
-
-    # Tentar via PPA openjdk-r ou Adoptium APT repo
-    if command -v apt-get &> /dev/null && [ -n "$SUDO" -o "$(id -u)" -eq 0 ]; then
-        echo "  -> Tentando instalar pacotes Java 8 via APT..."
-        $SUDO add-apt-repository -y ppa:openjdk-r/ppa 2>/dev/null || true
-        $SUDO apt-get update -y || true
-        $SUDO apt-get install -y openjdk-8-jre-headless openjdk-8-jdk temurin-8-jdk 2>/dev/null || true
-    fi
-
-    # Verificar se algum método acima funcionou
-    for cand in \
-        /usr/local/sdkman/candidates/java/8*/bin/java \
-        "$HOME"/.sdkman/candidates/java/8*/bin/java \
-        /usr/lib/jvm/*java-8*/jre/bin/java \
-        /usr/lib/jvm/*java-8*/bin/java \
-        /usr/lib/jvm/*java-1.8*/bin/java \
-        /usr/lib/jvm/*temurin-8*/bin/java \
-        /usr/lib/jvm/*temurin-8*/jre/bin/java \
-        "$ROOT_DIR/scripts/bin/java-8/bin/java"; do
-        if [ -x "$cand" ]; then
-            V=$("$cand" -version 2>&1 | head -n 1)
-            if [[ "$V" =~ "1.8." ]] || [[ "$V" =~ "\"8" ]]; then
-                JAVA8_READY=true
-                echo -e "  ✓ Java 8 instalado com sucesso: ${GREEN}$cand${NC} ($V)"
-                break
-            fi
-        fi
-    done
-
-    # Fallback portátil definitivo: baixar JRE 8 direto da API da Adoptium para a arquitetura correta
-    if [ "$JAVA8_READY" = false ]; then
-        ARCH_RAW=$(uname -m)
-        ADOPTIUM_ARCH="x64"
-        case "$ARCH_RAW" in
-            aarch64|arm64|armv8*) ADOPTIUM_ARCH="aarch64" ;;
-            x86_64|amd64) ADOPTIUM_ARCH="x64" ;;
-        esac
-
-        echo "  -> Baixando JRE 8 portátil oficial da Adoptium ($ADOPTIUM_ARCH)..."
-        rm -rf "$ROOT_DIR/scripts/bin/java-8"
-        mkdir -p "$ROOT_DIR/scripts/bin/java-8"
-        curl -Ls "https://api.adoptium.net/v3/binary/latest/8/ga/linux/${ADOPTIUM_ARCH}/jre/hotspot/normal/eclipse" -o /tmp/java8.tar.gz
-        tar -xzf /tmp/java8.tar.gz -C "$ROOT_DIR/scripts/bin/java-8" --strip-components=1
-        chmod +x "$ROOT_DIR/scripts/bin/java-8/bin/"* 2>/dev/null || true
-        rm -f /tmp/java8.tar.gz
-        echo -e "${GREEN}✓ Java 8 portátil instalado em scripts/bin/java-8!${NC}"
-    fi
-fi
+echo -e "\n${YELLOW}[3/5] Verificando e garantindo Java 8...${NC}"
+bash "$ROOT_DIR/scripts/install_java8.sh"
 
 # 4. Instalar Playit.gg
 echo -e "\n${YELLOW}[4/5] Verificando Playit.gg Agent portátil...${NC}"

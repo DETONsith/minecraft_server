@@ -70,27 +70,28 @@ detect_java8() {
         fi
     fi
 
-    # 3. Se nenhum Java 8 válido for encontrado, baixar automaticamente o JRE 8 portátil da Adoptium para a arquitetura do sistema
-    local arch_raw
-    arch_raw=$(uname -m)
-    local adoptium_arch="x64"
-    case "$arch_raw" in
-        aarch64|arm64|armv8*) adoptium_arch="aarch64" ;;
-        x86_64|amd64) adoptium_arch="x64" ;;
-    esac
-
-    echo -e "${YELLOW}Aviso: Java 8 não encontrado no ambiente. Baixando JRE 8 portátil oficial da Adoptium (${adoptium_arch})...${NC}" >&2
-    rm -rf "$ROOT_DIR/scripts/bin/java-8"
-    mkdir -p "$ROOT_DIR/scripts/bin/java-8"
-    curl -Ls "https://api.adoptium.net/v3/binary/latest/8/ga/linux/${adoptium_arch}/jre/hotspot/normal/eclipse" -o /tmp/java8_temp.tar.gz
-    tar -xzf /tmp/java8_temp.tar.gz -C "$ROOT_DIR/scripts/bin/java-8" --strip-components=1 2>/dev/null || true
-    chmod +x "$ROOT_DIR/scripts/bin/java-8/bin/"* 2>/dev/null || true
-    rm -f /tmp/java8_temp.tar.gz
-
-    if [ -x "$ROOT_DIR/scripts/bin/java-8/bin/java" ]; then
-        echo -e "${GREEN}✓ Java 8 portátil configurado com sucesso!${NC}" >&2
-        echo "$ROOT_DIR/scripts/bin/java-8/bin/java"
-        return 0
+    # 3. Se nenhum Java 8 válido for encontrado, executar o instalador automático (SDKMAN / APT / Adoptium)
+    if [ -f "$ROOT_DIR/scripts/install_java8.sh" ]; then
+        bash "$ROOT_DIR/scripts/install_java8.sh" >&2 || true
+        for jvm in \
+            /usr/local/sdkman/candidates/java/8*/bin/java \
+            "$HOME"/.sdkman/candidates/java/8*/bin/java \
+            /usr/lib/jvm/*java-8*/jre/bin/java \
+            /usr/lib/jvm/*java-8*/bin/java \
+            /usr/lib/jvm/*java-1.8*/bin/java \
+            /usr/lib/jvm/*temurin-8*/bin/java \
+            /usr/lib/jvm/*temurin-8*/jre/bin/java \
+            /usr/lib/jvm/default-java/bin/java \
+            "$ROOT_DIR/scripts/bin/java-8/bin/java"; do
+            if [ -x "$jvm" ]; then
+                local version
+                version=$("$jvm" -version 2>&1 | head -n 1)
+                if [[ "$version" =~ "1.8." ]] || [[ "$version" =~ "\"8" ]]; then
+                    echo "$jvm"
+                    return 0
+                fi
+            fi
+        done
     fi
 
     command -v java || echo "java"
