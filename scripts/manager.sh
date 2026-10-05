@@ -94,7 +94,7 @@ detect_java8() {
         done
     fi
 
-    command -v java || echo "java"
+    return 1
 }
 
 status_services() {
@@ -224,7 +224,11 @@ start_services() {
     if [ "$SERVER_MODE" = "standalone" ]; then
         echo -n "Iniciando Servidor Minecraft (Forge 1.12.2 Standalone)... "
         if ! ps aux | grep -v grep | grep -q "java"; then
-            JAVA_EXEC=$(detect_java8)
+            JAVA_EXEC=$(detect_java8 || true)
+            if [ -z "$JAVA_EXEC" ] || [ ! -x "$JAVA_EXEC" ]; then
+                echo -e "${RED}Erro: Java 8 não encontrado! Execute ./scripts/install_java8.sh primeiro.${NC}"
+                return 1
+            fi
             
             # Localizar pasta do servidor e JAR do Forge
             MC_SERVER_DIR=""
