@@ -1,0 +1,14 @@
+[
+  {
+    "uuid": "aab88f7a-7088-3f8c-a288-a69ce44e8d67",
+    "name": "Desodoman",
+    "level": 4,
+    "bypassesPlayerLimit": false
+  },
+  {
+    "uuid": "89e1a285-7dea-3805-ae9f-27932ff36f65",
+    "name": "DetonSith",
+    "level": 4,
+    "bypassesPlayerLimit": false
+  }
+]

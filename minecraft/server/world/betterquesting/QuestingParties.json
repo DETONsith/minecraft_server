@@ -1,0 +1,22 @@
+{
+  "parties:9": {
+    "0:10": {
+      "members:9": {
+        "0:10": {
+          "uuid:8": "89e1a285-7dea-3805-ae9f-27932ff36f65",
+          "status:8": "OWNER"
+        },
+        "1:10": {
+          "uuid:8": "aab88f7a-7088-3f8c-a288-a69ce44e8d67",
+          "status:8": "MEMBER"
+        }
+      },
+      "partyID:3": 0,
+      "properties:10": {
+        "betterquesting:10": {
+          "name:8": "Giovani"
+        }
+      }
+    }
+  }
+}

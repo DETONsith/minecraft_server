@@ -35,22 +35,23 @@ minecraft_server/
 
 ---
 
-## 🚀 Instalação Rápida (1 Comando)
+## 🚀 Instalação e Preparação do StoneBlock (Forge 1.12.2)
 
-Clone o repositório no seu novo ambiente (Codespace ou Linux):
-
+### 1. Importar Mods, Configs e Save do Launcher local:
+Se você já tem a instância do modpack no SKLauncher ou na sua máquina:
 ```bash
-git clone https://github.com/cJessse/minecraft_server.git
-cd minecraft_server
-chmod +x setup.sh manager.sh scripts/*.sh
+./scripts/import_stoneblock.sh
+```
+*(Ele copia automaticamente `mods/`, `config/`, `scripts/` e o seu save `New World` para `minecraft/server/world`, além de instalar o Forge 1.12.2 Server).*
+
+### 2. Configurar Dependências do Ambiente (Setup):
+```bash
 ./setup.sh
 ```
-
-O `setup.sh` realizará automaticamente:
-1. Instalação de dependências essenciais (`Java 21 OpenJDK`, `Python 3`, `pip`, `venv`, `rclone`).
-2. Instalação e configuração do **Playit.gg**.
-3. Download e configuração do **Crafty Controller 4** com ambiente virtual isolado.
-4. Criação do arquivo de configuração `config/config.env`.
+O `setup.sh` instalará:
+1. **Java 8 OpenJDK** (obrigatório para StoneBlock / Forge 1.12.2).
+2. **Playit.gg CLI** para expor IP público no GitHub Codespaces.
+3. Dependências do Python e RCON para auto-save contínuo e graceful shutdown.
 
 ---
 

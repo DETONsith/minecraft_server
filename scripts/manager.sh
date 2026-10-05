@@ -33,6 +33,47 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
+detect_java8() {
+    if [ -n "$JAVA_8_BIN" ] && [ -x "$JAVA_8_BIN" ]; then
+        echo "$JAVA_8_BIN"
+        return 0
+    fi
+
+    # Buscar instalações comuns de Java 8
+    local candidates=(
+        "/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java"
+        "/usr/lib/jvm/java-8-openjdk-amd64/bin/java"
+        "/usr/lib/jvm/java-8-openjdk-arm64/jre/bin/java"
+        "/usr/lib/jvm/java-8-openjdk-arm64/bin/java"
+        "/usr/lib/jvm/temurin-8-jdk-amd64/bin/java"
+        "/usr/lib/jvm/temurin-8-jdk-arm64/bin/java"
+        "/usr/lib/jvm/java-8-openjdk/bin/java"
+        "/usr/lib/jvm/default-java/bin/java"
+        /usr/local/sdkman/candidates/java/8.*/bin/java
+        $HOME/.sdkman/candidates/java/8.*/bin/java
+    )
+
+    for jvm in "${candidates[@]}"; do
+        if [ -x "$jvm" ]; then
+            echo "$jvm"
+            return 0
+        fi
+    done
+
+    # Checar se 'java' padrão é Java 8
+    if command -v java &>/dev/null; then
+        local version
+        version=$(java -version 2>&1 | head -n 1)
+        if [[ "$version" =~ "1.8." ]] || [[ "$version" =~ "\"8" ]]; then
+            command -v java
+            return 0
+        fi
+    fi
+
+    # Fallback para o java padrão do sistema se nenhum 8 específico for achado
+    command -v java || echo "java"
+}
+
 status_services() {
     echo -e "\n══════════════════════════════════════════════════════"
     echo -e "             STATUS ATUAL DOS SERVIÇOS                 "
@@ -47,9 +88,17 @@ status_services() {
     fi
 
     # Playit
-    if ps aux | grep -v grep | grep -q "playitd"; then
-        PID=$(ps aux | grep -v grep | grep "playitd" | awk '{print $2}' | head -1)
+    if pgrep -f "playit" > /dev/null; then
+        PID=$(pgrep -f "playit" | head -1)
         echo -e "  Playit.gg Tunnel:   ${GREEN}● ATIVO${NC} (PID: $PID)"
+        if [ ! -s "$ROOT_DIR/config/playit.toml" ]; then
+            local user_socket="/tmp/playit_${USER:-default}.sock"
+            local claim_code
+            claim_code=$(playit --socket-path "$user_socket" claim generate 2>/dev/null || true)
+            if [ -n "$claim_code" ] && [ "$claim_code" != "error" ]; then
+                echo -e "  ${YELLOW}↳ Vincular Túnel Playit: ${CYAN}https://playit.gg/claim/${claim_code}${NC}"
+            fi
+        fi
     else
         echo -e "  Playit.gg Tunnel:   ${RED}○ PARADO${NC}"
     fi
@@ -57,7 +106,7 @@ status_services() {
     # Servidor Minecraft (Processo Java)
     if ps aux | grep -v grep | grep -q "java"; then
         PID=$(ps aux | grep -v grep | grep "java" | awk '{print $2}' | head -1)
-        echo -e "  Servidor Minecraft: ${GREEN}● ATIVO${NC} (PID: $PID)"
+        echo -e "  Servidor Minecraft: ${GREEN}● ATIVO (Forge/Java)${NC} (PID: $PID)"
     else
         echo -e "  Servidor Minecraft: ${RED}○ PARADO${NC}"
     fi
@@ -72,9 +121,9 @@ status_services() {
     # Portas em escuta
     echo -e "\n  Portas em escuta:"
     if command -v ss &>/dev/null; then
-        sudo ss -tulpn 2>/dev/null | grep -E '8443|25565|25575' | awk '{print "    - " $1, $5}' || echo "    Nenhuma porta ativa detectada."
+        ss -tulpn 2>/dev/null | grep -E '8443|25565|25575' | awk '{print "    - " $1, $5}' || echo "    Nenhuma porta ativa detectada."
     elif command -v netstat &>/dev/null; then
-        sudo netstat -tulpn 2>/dev/null | grep -E '8443|25565|25575' | awk '{print "    - " $1, $4}' || echo "    Nenhuma porta ativa detectada."
+        netstat -tulpn 2>/dev/null | grep -E '8443|25565|25575' | awk '{print "    - " $1, $4}' || echo "    Nenhuma porta ativa detectada."
     else
         echo "    (Instale net-tools ou iproute2 para checar portas)"
     fi
@@ -94,11 +143,15 @@ optimize_all_instances() {
     if [ -f "$SCRIPT_DIR/optimize_server.sh" ]; then
         bash "$SCRIPT_DIR/optimize_server.sh" -q
     fi
+    if [ -f "$SCRIPT_DIR/fix_player_uuids.py" ] && [ -d "$WORKSPACE_DIR/minecraft/server/world" ]; then
+        python3 "$SCRIPT_DIR/fix_player_uuids.py" "$WORKSPACE_DIR/minecraft/server/world" "$HOME/.sklauncher/instances/stoneblock" > /dev/null 2>&1 || true
+    fi
 }
 
 start_watchdog() {
     if ! pgrep -f "watchdog.sh" > /dev/null && [ -f "$SCRIPT_DIR/watchdog.sh" ]; then
-        nohup bash "$SCRIPT_DIR/watchdog.sh" > /dev/null 2>&1 &
+        nohup bash "$SCRIPT_DIR/watchdog.sh" > /dev/null 2>&1 < /dev/null &
+        disown $! 2>/dev/null || true
     fi
 }
 
@@ -116,23 +169,106 @@ start_services() {
     # 1. Iniciar Playit daemon
     if [ "${ENABLE_PLAYIT:-true}" = "true" ]; then
         echo -n "Iniciando Playit daemon... "
-        sudo mkdir -p /run/playit "$PLAYIT_SOCKET_DIR" 2>/dev/null || true
-        sudo ln -sf "$PLAYIT_SOCKET_DIR/playitd.sock" /run/playit/playitd.sock 2>/dev/null || true
-        if ! pgrep -f "playitd" > /dev/null; then
-            if command -v playitd &> /dev/null; then
-                sudo playitd --socket-path "$PLAYIT_SOCKET_DIR/playitd.sock" > /tmp/playit.log 2>&1 &
+        local user_socket="/tmp/playit_${USER:-default}.sock"
+        rm -f "$user_socket" 2>/dev/null || true
+        
+        PLAYIT_BIN=""
+        if [ -x "$ROOT_DIR/scripts/bin/playit" ]; then
+            PLAYIT_BIN="$ROOT_DIR/scripts/bin/playit"
+        elif command -v playit-linux-amd64 &>/dev/null; then
+            PLAYIT_BIN="$(command -v playit-linux-amd64)"
+        elif command -v playitd &>/dev/null; then
+            PLAYIT_BIN="$(command -v playitd)"
+        elif command -v playit &>/dev/null; then
+            PLAYIT_BIN="$(command -v playit)"
+        fi
+
+        if [ -n "$PLAYIT_BIN" ]; then
+            if ! pgrep -f "playit" > /dev/null; then
+                nohup "$PLAYIT_BIN" --secret-path "$ROOT_DIR/config/playit.toml" --socket-path "$user_socket" -l /tmp/playit.log > /tmp/playit_stdout.log 2>&1 < /dev/null &
+                disown $! 2>/dev/null || true
                 sleep 2
                 echo -e "${GREEN}OK${NC}"
             else
-                echo -e "${RED}playitd não encontrado! Execute ./scripts/setup.sh primeiro.${NC}"
+                echo -e "${YELLOW}Já em execução${NC}"
+            fi
+        else
+            echo -e "${RED}playit não encontrado! Execute ./scripts/setup.sh primeiro.${NC}"
+        fi
+    fi
+
+    # 2. Iniciar Servidor Minecraft (Modo Standalone direto ou Crafty)
+    if [ "$SERVER_MODE" = "standalone" ]; then
+        echo -n "Iniciando Servidor Minecraft (Forge 1.12.2 Standalone)... "
+        if ! ps aux | grep -v grep | grep -q "java"; then
+            JAVA_EXEC=$(detect_java8)
+            
+            # Localizar pasta do servidor e JAR do Forge
+            MC_SERVER_DIR=""
+            FORGE_JAR=""
+            CANDIDATE_DIRS=(
+                "$WORKSPACE_DIR/minecraft/server"
+                "$WORKSPACE_DIR/server"
+                "$WORKSPACE_DIR"
+            )
+
+            for cdir in "${CANDIDATE_DIRS[@]}"; do
+                if [ -d "$cdir" ]; then
+                    JAR_FOUND=$(find "$cdir" -maxdepth 2 -name "forge-1.12.2-*.jar" ! -name "*installer*" 2>/dev/null | head -1)
+                    if [ -n "$JAR_FOUND" ]; then
+                        MC_SERVER_DIR="$(dirname "$JAR_FOUND")"
+                        FORGE_JAR="$JAR_FOUND"
+                        break
+                    fi
+                fi
+            done
+
+            if [ -z "$FORGE_JAR" ]; then
+                # Procurar qualquer jar executável
+                for cdir in "${CANDIDATE_DIRS[@]}"; do
+                    JAR_FOUND=$(find "$cdir" -maxdepth 2 -name "*.jar" ! -name "*installer*" 2>/dev/null | head -1)
+                    if [ -n "$JAR_FOUND" ]; then
+                        MC_SERVER_DIR="$(dirname "$JAR_FOUND")"
+                        FORGE_JAR="$JAR_FOUND"
+                        break
+                    fi
+                done
+            fi
+
+            if [ -n "$FORGE_JAR" ] && [ -d "$MC_SERVER_DIR" ]; then
+                mkdir -p "$MC_SERVER_DIR/logs"
+                cd "$MC_SERVER_DIR"
+                
+                MIN_RAM="${MIN_RAM:-4G}"
+                MAX_RAM="${MAX_RAM:-6G}"
+                
+                # Flags JVM otimizadas para Stoneblock / Java 8 G1GC e auto-confirm do Forge
+                nohup "$JAVA_EXEC" \
+                    -Xms"$MIN_RAM" \
+                    -Xmx"$MAX_RAM" \
+                    -Dfml.queryResult=confirm \
+                    -XX:+UseG1GC \
+                    -XX:+UnlockExperimentalVMOptions \
+                    -XX:MaxGCPauseMillis=100 \
+                    -XX:+DisableExplicitGC \
+                    -XX:TargetSurvivorRatio=90 \
+                    -XX:G1NewSizePercent=35 \
+                    -XX:G1MaxNewSizePercent=60 \
+                    -XX:G1ReservePercent=15 \
+                    -XX:G1MixedGCCountTarget=4 \
+                    -XX:InitiatingHeapOccupancyPercent=15 \
+                    -jar "$(basename "$FORGE_JAR")" nogui > "$MC_SERVER_DIR/logs/server_process.log" 2>&1 < /dev/null &
+                disown $! 2>/dev/null || true
+                
+                cd "$ROOT_DIR"
+                echo -e "${GREEN}OK (Java 8: $JAVA_EXEC | RAM: $MIN_RAM-$MAX_RAM)${NC}"
+            else
+                echo -e "${RED}Jar do Forge não encontrado! Execute ./scripts/import_stoneblock.sh primeiro.${NC}"
             fi
         else
             echo -e "${YELLOW}Já em execução${NC}"
         fi
-    fi
-
-    # 2. Iniciar Crafty Controller
-    if [ "$SERVER_MODE" = "crafty" ]; then
+    elif [ "$SERVER_MODE" = "crafty" ]; then
         echo -n "Iniciando Crafty Controller... "
         if ! pgrep -f "python3 main.py" > /dev/null; then
             if [ -d "$CRAFTY_DIR/.venv" ] && [ -d "$CRAFTY_DIR/crafty-4" ]; then
@@ -140,7 +276,7 @@ start_services() {
                 # shellcheck disable=SC1091
                 source .venv/bin/activate
                 cd crafty-4
-                nohup python3 main.py --daemon > "$CRAFTY_DIR/crafty_daemon.log" 2>&1 &
+                nohup python3 main.py --daemon > "$CRAFTY_DIR/crafty_daemon.log" 2>&1 < /dev/null &
                 cd "$ROOT_DIR"
                 echo -e "${GREEN}OK${NC}"
             else
@@ -155,23 +291,25 @@ start_services() {
     start_watchdog
 
     # 4. Aguardar inicialização e verificar subida do Servidor Minecraft (Java / Portas)
-    echo -n "Aguardando inicialização do servidor Minecraft..."
-    for i in $(seq 1 15); do
+    echo -n "Aguardando inicialização do processo Minecraft..."
+    for i in $(seq 1 10); do
         if ps aux | grep -v grep | grep -q "java"; then
-            echo -e " ${GREEN}✓ Servidor Minecraft (Java) ATIVO!${NC}"
+            echo -e " ${GREEN}✓ Processo Forge (Java) ATIVO!${NC}"
             break
         fi
         sleep 1
         echo -n "."
     done
 
-    if ! ps aux | grep -v grep | grep -q "java"; then
-        echo -e " ${YELLOW}(Crafty iniciado; aguardando autostart do mundo no painel...)${NC}"
+    if [ "$SERVER_MODE" = "standalone" ]; then
+        echo -e "✓ Porta Minecraft: ${CYAN}25565${NC}"
+        echo -e "✓ Porta RCON: ${CYAN}25575${NC}"
+        echo -e "${YELLOW}ℹ Nota: O StoneBlock leva de 1 a 2 minutos para carregar os 218 mods. Acompanhe com a opção (7 - Ver Logs).${NC}"
+    else
+        echo -e "✓ Painel Crafty: ${CYAN}https://localhost:8443${NC}"
+        echo -e "✓ Porta Minecraft: ${CYAN}25565${NC}"
+        echo -e "✓ Porta RCON: ${CYAN}25575${NC}"
     fi
-
-    echo -e "✓ Painel Crafty: ${CYAN}https://localhost:8443${NC}"
-    echo -e "✓ Porta Minecraft: ${CYAN}25565${NC}"
-    echo -e "✓ Porta RCON: ${CYAN}25575${NC}"
 }
 
 stop_services() {
@@ -219,9 +357,9 @@ stop_services() {
     fi
 
     # 3. Playit.gg
-    if ps aux | grep -v grep | grep -q "playitd"; then
+    if ps aux | grep -v grep | grep -qE "playitd|/playit"; then
         echo -n "Parando Playit.gg... "
-        sudo pkill -f "playitd" || true
+        pkill -f "playit" 2>/dev/null || true
         echo -e "${GREEN}OK${NC}"
     fi
 
@@ -248,13 +386,24 @@ backup_world() {
 
     echo "Localizando dados do mundo..."
     TARGET_DIR=""
-    if [ -d "$WORKSPACE_DIR/minecraft/crafty/crafty-4/servers" ]; then
-        TARGET_DIR=$(find "$WORKSPACE_DIR/minecraft/crafty/crafty-4/servers" -maxdepth 3 -type d -name "world" 2>/dev/null | head -1)
-    fi
+    CANDIDATE_WORLD_DIRS=(
+        "$WORKSPACE_DIR/minecraft/server/world"
+        "$WORKSPACE_DIR/minecraft/server/saves/New World"
+        "$WORKSPACE_DIR/minecraft/crafty/crafty-4/servers"
+        "$WORKSPACE_DIR/world"
+    )
 
-    if [ -z "$TARGET_DIR" ] && [ -d "$WORKSPACE_DIR/world" ]; then
-        TARGET_DIR="$WORKSPACE_DIR/world"
-    fi
+    for cpath in "${CANDIDATE_WORLD_DIRS[@]}"; do
+        if [ -d "$cpath" ]; then
+            if [[ "$cpath" =~ crafty-4/servers ]]; then
+                TARGET_DIR=$(find "$cpath" -maxdepth 3 -type d -name "world" 2>/dev/null | head -1)
+                [ -n "$TARGET_DIR" ] && break
+            else
+                TARGET_DIR="$cpath"
+                break
+            fi
+        fi
+    done
 
     if [ -n "$TARGET_DIR" ] && [ -d "$TARGET_DIR" ]; then
         PARENT_DIR=$(dirname "$TARGET_DIR")
@@ -326,6 +475,18 @@ view_logs() {
     esac
 }
 
+setup_playit() {
+    local user_socket="/tmp/playit_${USER:-default}.sock"
+    echo -e "\n>>> Iniciando provisionamento do Playit.gg..."
+    echo -e "Acesse o link gerado abaixo no seu navegador e confirme o vínculo:\n"
+    if ! pgrep -f "playit" > /dev/null; then
+        echo "Iniciando Playit daemon primeiro..."
+        start_services
+    fi
+    playit --socket-path "$user_socket" setup || "$ROOT_DIR/scripts/bin/playit" setup
+    echo -e "\n${GREEN}✓ Playit vinculado com sucesso!${NC}"
+}
+
 # Suporte a argumentos de linha de comando não interativos (CI/CD, Cron, Actions)
 if [ -n "$1" ]; then
     case "$1" in
@@ -364,6 +525,10 @@ if [ -n "$1" ]; then
             fi
             exit 0
             ;;
+        playit|claim|setup)
+            setup_playit
+            exit 0
+            ;;
         status)
             status_services
             exit 0
@@ -378,7 +543,7 @@ if [ -n "$1" ]; then
             exit 0
             ;;
         *)
-            echo "Uso: $0 [start|stop|backup|stop-backup|save|shutdown|optimize|status|cmd <comando>]"
+            echo "Uso: $0 [start|stop|backup|stop-backup|save|shutdown|optimize|playit|status|cmd <comando>]"
             exit 1
             ;;
     esac
@@ -386,9 +551,10 @@ fi
 
 # Loop do Menu Principal Interativo
 while true; do
+    stty sane 2>/dev/null || true
     status_services
     echo -e "O que deseja fazer?"
-    echo "1) Iniciar Servidor & Serviços (Crafty + Playit)"
+    echo "1) Iniciar Servidor & Serviços (Forge/Playit)"
     echo "2) Parar todos os serviços (Graceful Shutdown Seguro)"
     echo "3) Fazer Backup e Sincronizar na Nuvem"
     echo "4) Parar Serviços + Backup Geral"
@@ -396,9 +562,10 @@ while true; do
     echo "6) Sincronizar/Salvar mundo no disco agora (save-all flush + sync)"
     echo "7) Ver Logs em tempo real"
     echo "8) Aplicar Otimizações Anti-Lag em Todas as Instâncias"
+    echo "9) Vincular / Autenticar Túnel Playit.gg"
     echo "0) Sair"
     echo "------------------------------------------------------"
-    read -rp "Digite a opção [0-8]: " option
+    read -rp "Digite a opção [0-9]: " option
 
     case $option in
         1) start_services ;;
@@ -420,9 +587,11 @@ while true; do
                 bash "$SCRIPT_DIR/optimize_server.sh"
             fi
             ;;
+        9) setup_playit ;;
         0) echo "Até logo!"; exit 0 ;;
         *) echo -e "${RED}Opção inválida!${NC}" ;;
     esac
     echo ""
-    read -rp "Pressione [Enter] para continuar..."
+    stty sane 2>/dev/null || true
+    read -rp "Pressione [Enter] para continuar..." _unused_key
 done

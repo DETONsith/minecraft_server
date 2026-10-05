@@ -1,8 +1,32 @@
 {
-  "name": "Minecraft Server",
+  "name": "StoneBlock Minecraft Server",
+  "image": "mcr.microsoft.com/devcontainers/universal:2-linux",
+  "features": {
+    "ghcr.io/devcontainers/features/java:1": {
+      "version": "8",
+      "installJdk": true
+    }
+  },
+  "forwardPorts": [25565, 8443, 25575],
+  "portsAttributes": {
+    "25565": {
+      "label": "Minecraft Server (Forge)",
+      "onAutoForward": "notify"
+    },
+    "8443": {
+      "label": "Crafty Controller Web Panel",
+      "onAutoForward": "notify"
+    },
+    "25575": {
+      "label": "Minecraft RCON",
+      "onAutoForward": "silent"
+    }
+  },
+  "postCreateCommand": "bash ./scripts/setup.sh",
   "customizations": {
     "codespaces": {
       "idleTimeoutMinutes": 120
     }
   }
 }
+

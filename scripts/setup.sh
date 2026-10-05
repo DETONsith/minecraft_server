@@ -29,40 +29,43 @@ else
     echo -e "${GREEN}✓ Arquivo config.env já existente.${NC}"
 fi
 
-# 2. Atualizar pacotes do sistema
-echo -e "\n${YELLOW}[2/5] Verificando dependências do sistema (apt)...${NC}"
+# 2. Atualizar pacotes do sistema e Instalar Java 8 (Obrigatório para Forge 1.12.2 / Stoneblock)
+echo -e "\n${YELLOW}[2/5] Verificando dependências do sistema e Java 8...${NC}"
 if command -v apt-get &> /dev/null; then
     sudo apt-get update -y
     sudo apt-get install -y \
-        openjdk-21-jre-headless \
+        openjdk-8-jre-headless \
+        openjdk-8-jdk \
         python3 \
         python3-pip \
         python3-venv \
         curl \
         wget \
         tar \
+        unzip \
         net-tools \
         rclone \
         gnupg \
-        lsb-release
-    echo -e "${GREEN}✓ Dependências base instaladas.${NC}"
+        lsb-release 2>/dev/null || {
+            echo -e "${YELLOW}Tentando instalar via Adoptium repo caso falhe...${NC}"
+            wget -qO - https://packages.adoptium.net/artifactory/api/gpg/key/public | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/adoptium.gpg 2>/dev/null || true
+            echo "deb https://packages.adoptium.net/artifactory/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/adoptium.list 2>/dev/null || true
+            sudo apt-get update -y
+            sudo apt-get install -y temurin-8-jdk || true
+        }
+    echo -e "${GREEN}✓ Dependências base e Java 8 instalados.${NC}"
 else
-    echo -e "${YELLOW}Aviso: Gerenciador apt-get não encontrado. Certifique-se de ter Java 21, Python 3 e rclone instalados manualmente.${NC}"
+    echo -e "${YELLOW}Aviso: Gerenciador apt-get não encontrado. Certifique-se de ter Java 8, Python 3 e rclone instalados manualmente.${NC}"
 fi
 
 # 3. Instalar Playit.gg
-echo -e "\n${YELLOW}[3/5] Verificando Playit.gg CLI...${NC}"
-if ! command -v playitd &> /dev/null; then
-    echo "Instalando playitd..."
-    curl -SsL https://playit-cloud.github.io/ppa/key.gpg | gpg --dearmor | sudo tee /etc/apt/trusted.gpg.d/playit.gpg >/dev/null
-    echo "deb [signed-by=/etc/apt/trusted.gpg.d/playit.gpg] https://playit-cloud.github.io/ppa/data ./" | sudo tee /etc/apt/sources.list.d/playit-cloud.list
-    sudo apt-get update -y
-    sudo apt-get install -y playit || {
-        echo -e "${YELLOW}Instalação via repositório falhou. Baixando binário direto...${NC}"
-        sudo curl -Lo /usr/bin/playitd https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
-        sudo chmod +x /usr/bin/playitd
-    }
-    echo -e "${GREEN}✓ Playit.gg instalado com sucesso!${NC}"
+echo -e "\n${YELLOW}[3/5] Verificando Playit.gg Agent portátil...${NC}"
+mkdir -p "$ROOT_DIR/scripts/bin"
+if [ ! -x "$ROOT_DIR/scripts/bin/playit" ]; then
+    echo "Baixando binário portátil do playit-agent..."
+    curl -SsLo "$ROOT_DIR/scripts/bin/playit" https://github.com/playit-cloud/playit-agent/releases/latest/download/playit-linux-amd64
+    chmod +x "$ROOT_DIR/scripts/bin/playit"
+    echo -e "${GREEN}✓ Playit.gg instalado em scripts/bin/playit!${NC}"
 else
     echo -e "${GREEN}✓ Playit.gg já está instalado.${NC}"
 fi

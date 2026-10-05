@@ -3,19 +3,26 @@
 __pycache__/
 *.pyc
 
-# Binários e Instâncias de Servidor
-*.jar
-minecraft/crafty/crafty-4/servers/*/world/
+# Logs, Crash Reports e Temporários
+*.log
+nohup.out
+logs/
+crash-reports/
+minecraft/server/logs/
+minecraft/server/crash-reports/
+minecraft/server/snapshots-server/
+minecraft/server/backups/
+minecraft/server/.mixin.out/
+*.bak_*
 minecraft/crafty/crafty-4/servers/*/logs/
 minecraft/crafty/crafty-4/servers/*/crash-reports/
 minecraft/crafty/crafty-4/app/config/crafty-web.json
-
-# Backups e Logs locais
-backups/*.tar.gz
-*.log
-nohup.out
 /run/playit/
 /tmp/playit/
+
+# Backups
+backups/*.tar.gz
+backups/*.zip
 
 # Configurações com credenciais locais
 config/config.env

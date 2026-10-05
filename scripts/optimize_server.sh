@@ -34,6 +34,8 @@ fi
 
 # 1. Localizar instâncias e arquivos server.properties
 SEARCH_PATHS=(
+    "$WORKSPACE_DIR/minecraft/server"
+    "$WORKSPACE_DIR/server"
     "$WORKSPACE_DIR/minecraft/crafty/crafty-4/servers"
     "$WORKSPACE_DIR/servers"
     "$WORKSPACE_DIR"
@@ -71,10 +73,11 @@ if [ ${#PROPERTIES_FILES[@]} -gt 0 ]; then
         # Backup do server.properties antes de alterar
         cp "$prop" "${prop}.bak_$(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
         
-        # Aplicar parâmetros de baixo lag, persistência segura e RCON
-        set_property "$prop" "view-distance" "7"
+        # Aplicar parâmetros de baixo lag, persistência segura, SKLauncher e RCON
+        set_property "$prop" "view-distance" "6"
         set_property "$prop" "simulation-distance" "5"
         set_property "$prop" "sync-chunk-writes" "true"
+        set_property "$prop" "online-mode" "${ONLINE_MODE:-false}"
         set_property "$prop" "enable-rcon" "true"
         set_property "$prop" "rcon.port" "25575"
         set_property "$prop" "rcon.password" "${RCON_PASSWORD:-SGItosSaveSecretPass2026!}"
@@ -84,30 +87,46 @@ if [ ${#PROPERTIES_FILES[@]} -gt 0 ]; then
         
         if [ "$QUIET_MODE" = false ]; then
             echo -e "  ${GREEN}✓ sync-chunk-writes=true${NC} (gravação síncrona/persistente anti-rollback)"
+            echo -e "  ${GREEN}✓ online-mode=${ONLINE_MODE:-false}${NC} (compatibilidade com SKLauncher / Contas)"
             echo -e "  ${GREEN}✓ enable-rcon=true${NC} (console remoto para autosaves e comandos)"
-            echo -e "  ${GREEN}✓ view-distance=7 | simulation-distance=5${NC}"
+            echo -e "  ${GREEN}✓ view-distance=6 | simulation-distance=5${NC}"
         fi
 
-        # Otimizar configurações PaperMC se disponíveis
-        if [ -f "$ROOT_DIR/config/templates/paper-world-defaults.yml" ]; then
+        # Otimizações para servidores FORGE / Modpacks (StoneBlock)
+        if [ -d "$SERVER_DIR/mods" ] || [ -f "$SERVER_DIR/forge.cfg" ] || [ -f "$CONFIG_DIR/forge.cfg" ]; then
             mkdir -p "$CONFIG_DIR"
-            cp "$ROOT_DIR/config/templates/paper-world-defaults.yml" "$CONFIG_DIR/paper-world-defaults.yml"
-            if [ "$QUIET_MODE" = false ]; then
-                echo -e "  ${GREEN}✓ config/paper-world-defaults.yml aplicado (auto-save 20s + flush-regions-on-save).${NC}"
+            FORGE_CFG="$CONFIG_DIR/forge.cfg"
+            if [ -f "$FORGE_CFG" ]; then
+                sed -i 's/B:removeErroringEntities=false/B:removeErroringEntities=true/g' "$FORGE_CFG" 2>/dev/null || true
+                sed -i 's/B:removeErroringTileEntities=false/B:removeErroringTileEntities=true/g' "$FORGE_CFG" 2>/dev/null || true
+                if [ "$QUIET_MODE" = false ]; then
+                    echo -e "  ${GREEN}✓ forge.cfg otimizado (removeErroringEntities=true, removeErroringTileEntities=true).${NC}"
+                fi
             fi
         fi
 
-        # Atualizar bukkit.yml para autosave frequente
-        if [ -f "$SERVER_DIR/bukkit.yml" ]; then
-            sed -i 's/autosave: [0-9]*/autosave: 400/' "$SERVER_DIR/bukkit.yml" 2>/dev/null || true
-            if [ "$QUIET_MODE" = false ]; then
-                echo -e "  ${GREEN}✓ bukkit.yml ticks-per.autosave: 400${NC} (20s)"
+        # Otimizar configurações PaperMC APENAS se for servidor Bukkit/Paper
+        if [ -f "$SERVER_DIR/paper.yml" ] || [ -f "$SERVER_DIR/bukkit.yml" ] || [ -f "$SERVER_DIR/paper-world-defaults.yml" ]; then
+            if [ -f "$ROOT_DIR/config/templates/paper-world-defaults.yml" ]; then
+                mkdir -p "$CONFIG_DIR"
+                cp "$ROOT_DIR/config/templates/paper-world-defaults.yml" "$CONFIG_DIR/paper-world-defaults.yml"
+                if [ "$QUIET_MODE" = false ]; then
+                    echo -e "  ${GREEN}✓ config/paper-world-defaults.yml aplicado.${NC}"
+                fi
             fi
-        fi
 
-        # Otimizar configurações Spigot se disponíveis
-        if [ -f "$ROOT_DIR/config/templates/spigot.yml.template" ]; then
-            cp "$ROOT_DIR/config/templates/spigot.yml.template" "$SERVER_DIR/spigot.yml"
+            # Atualizar bukkit.yml para autosave frequente
+            if [ -f "$SERVER_DIR/bukkit.yml" ]; then
+                sed -i 's/autosave: [0-9]*/autosave: 400/' "$SERVER_DIR/bukkit.yml" 2>/dev/null || true
+                if [ "$QUIET_MODE" = false ]; then
+                    echo -e "  ${GREEN}✓ bukkit.yml ticks-per.autosave: 400${NC} (20s)"
+                fi
+            fi
+
+            # Otimizar configurações Spigot se disponíveis
+            if [ -f "$ROOT_DIR/config/templates/spigot.yml.template" ]; then
+                cp "$ROOT_DIR/config/templates/spigot.yml.template" "$SERVER_DIR/spigot.yml"
+            fi
         fi
 
         # Garantir eula=true
