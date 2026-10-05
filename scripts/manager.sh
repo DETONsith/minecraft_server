@@ -39,28 +39,33 @@ detect_java8() {
         return 0
     fi
 
-    # Buscar instalações comuns de Java 8
+    # 1. Buscar instalações comuns de Java 8
     local candidates=(
+        "$ROOT_DIR/scripts/bin/java-8/bin/java"
+        /usr/local/sdkman/candidates/java/8.*/bin/java
+        $HOME/.sdkman/candidates/java/8.*/bin/java
         "/usr/lib/jvm/java-8-openjdk-amd64/jre/bin/java"
         "/usr/lib/jvm/java-8-openjdk-amd64/bin/java"
         "/usr/lib/jvm/java-8-openjdk-arm64/jre/bin/java"
         "/usr/lib/jvm/java-8-openjdk-arm64/bin/java"
         "/usr/lib/jvm/temurin-8-jdk-amd64/bin/java"
-        "/usr/lib/jvm/temurin-8-jdk-arm64/bin/java"
+        "/usr/lib/jvm/temurin-8-jre-amd64/bin/java"
         "/usr/lib/jvm/java-8-openjdk/bin/java"
         "/usr/lib/jvm/default-java/bin/java"
-        /usr/local/sdkman/candidates/java/8.*/bin/java
-        $HOME/.sdkman/candidates/java/8.*/bin/java
     )
 
     for jvm in "${candidates[@]}"; do
         if [ -x "$jvm" ]; then
-            echo "$jvm"
-            return 0
+            local version
+            version=$("$jvm" -version 2>&1 | head -n 1)
+            if [[ "$version" =~ "1.8." ]] || [[ "$version" =~ "\"8" ]]; then
+                echo "$jvm"
+                return 0
+            fi
         fi
     done
 
-    # Checar se 'java' padrão é Java 8
+    # 2. Checar se 'java' padrão é Java 8
     if command -v java &>/dev/null; then
         local version
         version=$(java -version 2>&1 | head -n 1)
@@ -70,7 +75,18 @@ detect_java8() {
         fi
     fi
 
-    # Fallback para o java padrão do sistema se nenhum 8 específico for achado
+    # 3. Se nenhum Java 8 válido for encontrado, baixar automaticamente o JRE 8 portátil da Adoptium
+    echo -e "${YELLOW}Aviso: Java 8 não encontrado no ambiente. Baixando JRE 8 portátil oficial da Adoptium...${NC}" >&2
+    mkdir -p "$ROOT_DIR/scripts/bin/java-8"
+    curl -Ls "https://api.adoptium.net/v3/binary/latest/8/ga/linux/x64/jre/hotspot/normal/eclipse" -o /tmp/java8_temp.tar.gz
+    tar -xzf /tmp/java8_temp.tar.gz -C "$ROOT_DIR/scripts/bin/java-8" --strip-components=1 2>/dev/null || true
+    rm -f /tmp/java8_temp.tar.gz
+    if [ -x "$ROOT_DIR/scripts/bin/java-8/bin/java" ]; then
+        echo -e "${GREEN}✓ Java 8 portátil configurado com sucesso!${NC}" >&2
+        echo "$ROOT_DIR/scripts/bin/java-8/bin/java"
+        return 0
+    fi
+
     command -v java || echo "java"
 }
 
@@ -292,14 +308,25 @@ start_services() {
 
     # 4. Aguardar inicialização e verificar subida do Servidor Minecraft (Java / Portas)
     echo -n "Aguardando inicialização do processo Minecraft..."
+    local java_alive=false
     for i in $(seq 1 10); do
         if ps aux | grep -v grep | grep -q "java"; then
+            java_alive=true
             echo -e " ${GREEN}✓ Processo Forge (Java) ATIVO!${NC}"
             break
         fi
         sleep 1
         echo -n "."
     done
+
+    if [ "$java_alive" = false ]; then
+        echo -e " ${RED}✗ O processo do servidor encerrou inesperadamente!${NC}"
+        if [ -n "$MC_SERVER_DIR" ] && [ -f "$MC_SERVER_DIR/logs/server_process.log" ]; then
+            echo -e "\n${RED}Últimas linhas do erro (server_process.log):${NC}"
+            tail -n 25 "$MC_SERVER_DIR/logs/server_process.log"
+        fi
+        return 1
+    fi
 
     if [ "$SERVER_MODE" = "standalone" ]; then
         echo -e "✓ Porta Minecraft: ${CYAN}25565${NC}"
@@ -463,10 +490,12 @@ view_logs() {
         1) tail -n 50 -f "$CRAFTY_DIR/crafty.log" 2>/dev/null || tail -n 50 -f "$CRAFTY_DIR/crafty_daemon.log" 2>/dev/null || echo "Log não encontrado." ;;
         2) 
             MC_LOG=$(find "$WORKSPACE_DIR" -name "latest.log" 2>/dev/null | head -1)
-            if [ -n "$MC_LOG" ]; then
+            if [ -n "$MC_LOG" ] && [ -s "$MC_LOG" ]; then
                 tail -n 50 -f "$MC_LOG"
+            elif [ -f "$WORKSPACE_DIR/minecraft/server/logs/server_process.log" ]; then
+                tail -n 50 -f "$WORKSPACE_DIR/minecraft/server/logs/server_process.log"
             else
-                echo "Arquivo latest.log do Minecraft não encontrado."
+                echo "Arquivo de log do Minecraft não encontrado."
             fi
             ;;
         3) tail -n 50 -f /tmp/playit.log 2>/dev/null || echo "Log do Playit não encontrado." ;;
