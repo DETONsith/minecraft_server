@@ -8,6 +8,10 @@ ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
 # Carregar arquivo de configuração (procura em config/ ou na raiz)
+if [ ! -f "$ROOT_DIR/config/config.env" ] && [ -f "$ROOT_DIR/config/config.env.example" ]; then
+    cp "$ROOT_DIR/config/config.env.example" "$ROOT_DIR/config/config.env"
+fi
+
 if [ -f "$ROOT_DIR/config/config.env" ]; then
     # shellcheck disable=SC1091
     source "$ROOT_DIR/config/config.env"
@@ -23,7 +27,7 @@ BACKUP_DIR="$WORKSPACE_DIR/${BACKUP_DIR:-backups}"
 REMOTE_DRIVE="${RCLONE_REMOTE:-drive:Minecraft_Backups}"
 PLAYIT_SOCKET_DIR="${PLAYIT_SOCKET_DIR:-/tmp/playit}"
 BACKUP_RETENTION_LOCAL="${BACKUP_RETENTION_LOCAL:-3}"
-SERVER_MODE="${SERVER_MODE:-crafty}"
+SERVER_MODE="${SERVER_MODE:-standalone}"
 
 # Paleta de Cores
 GREEN='\033[0;32m'
