@@ -275,33 +275,37 @@ start_services() {
                 mkdir -p "$MC_SERVER_DIR/logs"
                 cd "$MC_SERVER_DIR"
                 
-                MIN_RAM="${MIN_RAM:-4G}"
-                MAX_RAM="${MAX_RAM:-6G}"
-                
-                # Flags JVM otimizadas para Stoneblock / Java 8 G1GC e auto-confirm do Forge
-                JVM_ARGS=(
-                    -Xms"$MIN_RAM"
-                    -Xmx"$MAX_RAM"
-                    -Dfml.queryResult=confirm
-                    -XX:+UseG1GC
-                    -XX:+UnlockExperimentalVMOptions
-                    -XX:MaxGCPauseMillis=100
-                    -XX:+DisableExplicitGC
-                    -XX:TargetSurvivorRatio=90
-                    -XX:G1NewSizePercent=35
-                    -XX:G1MaxNewSizePercent=60
-                    -XX:G1ReservePercent=15
-                    -XX:G1MixedGCCountTarget=4
-                    -XX:InitiatingHeapOccupancyPercent=15
-                )
+                # Criar script de inicialização limpo e independente para o tmux
+                cat << 'EOF' > "$MC_SERVER_DIR/start_server.sh"
+#!/usr/bin/env bash
+cd "$(dirname "$0")"
+JAVA_BIN="$1"
+MIN_MEM="$2"
+MAX_MEM="$3"
+JAR_FILE="$4"
+exec "$JAVA_BIN" \
+    -Xms"$MIN_MEM" \
+    -Xmx"$MAX_MEM" \
+    -Dfml.queryResult=confirm \
+    -XX:+UseG1GC \
+    -XX:+UnlockExperimentalVMOptions \
+    -XX:MaxGCPauseMillis=100 \
+    -XX:+DisableExplicitGC \
+    -XX:TargetSurvivorRatio=90 \
+    -XX:G1NewSizePercent=35 \
+    -XX:G1MaxNewSizePercent=60 \
+    -XX:G1ReservePercent=15 \
+    -XX:G1MixedGCCountTarget=4 \
+    -XX:InitiatingHeapOccupancyPercent=15 \
+    -jar "$JAR_FILE" nogui
+EOF
+                chmod +x "$MC_SERVER_DIR/start_server.sh"
 
                 if command -v tmux &>/dev/null; then
                     tmux kill-session -t mc 2>/dev/null || true
-                    tmux new-session -d -s mc "bash -c 'cd \"$MC_SERVER_DIR\" && \"$JAVA_EXEC\" ${JVM_ARGS[*]} -jar \"$(basename \"$FORGE_JAR\")\" nogui 2>&1 | tee \"$MC_SERVER_DIR/logs/server_process.log\"; echo Server finished; sleep 86400'"
+                    tmux new-session -d -s mc "bash -c '\"$MC_SERVER_DIR/start_server.sh\" \"$JAVA_EXEC\" \"$MIN_RAM\" \"$MAX_RAM\" \"$(basename "$FORGE_JAR")\" 2>&1 | tee \"$MC_SERVER_DIR/logs/server_process.log\"; echo Server finished; sleep 86400'"
                 else
-                    setsid nohup "$JAVA_EXEC" \
-                        "${JVM_ARGS[@]}" \
-                        -jar "$(basename "$FORGE_JAR")" nogui > "$MC_SERVER_DIR/logs/server_process.log" 2>&1 < /dev/null &
+                    setsid nohup "$MC_SERVER_DIR/start_server.sh" "$JAVA_EXEC" "$MIN_RAM" "$MAX_RAM" "$(basename "$FORGE_JAR")" > "$MC_SERVER_DIR/logs/server_process.log" 2>&1 < /dev/null &
                     disown $! 2>/dev/null || true
                 fi
                 
