@@ -297,7 +297,7 @@ start_services() {
 
                 if command -v tmux &>/dev/null; then
                     tmux kill-session -t mc 2>/dev/null || true
-                    tmux new-session -d -s mc "cd '$MC_SERVER_DIR' && '$JAVA_EXEC' ${JVM_ARGS[*]} -jar '$(basename "$FORGE_JAR")' nogui 2>&1 | tee '$MC_SERVER_DIR/logs/server_process.log'"
+                    tmux new-session -d -s mc "bash -c 'cd \"$MC_SERVER_DIR\" && \"$JAVA_EXEC\" ${JVM_ARGS[*]} -jar \"$(basename \"$FORGE_JAR\")\" nogui 2>&1 | tee \"$MC_SERVER_DIR/logs/server_process.log\"; echo Server finished; sleep 86400'"
                 else
                     setsid nohup "$JAVA_EXEC" \
                         "${JVM_ARGS[@]}" \

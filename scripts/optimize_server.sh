@@ -76,7 +76,9 @@ if [ ${#PROPERTIES_FILES[@]} -gt 0 ]; then
         # Aplicar parâmetros de baixo lag, persistência segura, SKLauncher e RCON
         set_property "$prop" "view-distance" "6"
         set_property "$prop" "simulation-distance" "5"
-        set_property "$prop" "sync-chunk-writes" "true"
+        set_property "$prop" "max-tick-time" "-1"
+        set_property "$prop" "snooper-enabled" "false"
+        set_property "$prop" "sync-chunk-writes" "false"
         set_property "$prop" "online-mode" "${ONLINE_MODE:-false}"
         set_property "$prop" "enable-rcon" "true"
         set_property "$prop" "rcon.port" "25575"
