@@ -1,15 +1,10 @@
 name: Minecraft Server Auto Scheduler
 
 on:
-  schedule:
-    # Início da Sessão: 11:45 BRT (UTC-3) -> 14:45 UTC de Segunda a Sexta
-    - cron: '45 14 * * 1-5'
-    # Gatilho Fixo de Desligamento: 13:45 BRT (UTC-3) -> 16:45 UTC de Segunda a Sexta
-    - cron: '45 16 * * 1-5'
   workflow_dispatch:
     inputs:
       action:
-        description: 'Ação manual a executar'
+        description: 'Ação a executar'
         required: true
         default: 'session'
         type: choice
@@ -28,7 +23,7 @@ jobs:
   manage_codespace:
     name: Manage Minecraft Server Session
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 360
     steps:
       - name: Setup GitHub CLI
         run: |
@@ -42,16 +37,7 @@ jobs:
           ACTION_INPUT: ${{ github.event.inputs.action || 'session' }}
           DURATION_INPUT: ${{ github.event.inputs.duration_minutes || '120' }}
         run: |
-          CURRENT_HOUR_UTC=$(date -u +%H)
-          CURRENT_MIN_UTC=$(date -u +%M)
-          echo "Current UTC Time: ${CURRENT_HOUR_UTC}:${CURRENT_MIN_UTC}"
-
-          # Se o schedule rodou na janela das 16h UTC (13:45 BRT), força ação de desligamento
           EFFECTIVE_ACTION="${ACTION_INPUT}"
-          if [ "${{ github.event_name }}" = "schedule" ] && [ "$CURRENT_HOUR_UTC" = "16" ]; then
-            echo ">>> [SCHEDULE 13:45 BRT] Disparo do horário limite de encerramento."
-            EFFECTIVE_ACTION="stop_backup"
-          fi
           echo "Requested Action: ${EFFECTIVE_ACTION}"
 
           CODESPACE_NAME="$SPECIFIED_CODESPACE"
@@ -82,7 +68,7 @@ jobs:
             exit 0
           fi
 
-          # Modo SESSION (Padrão para agendamentos das 11:45 às 13:45 BRT - 120 minutos)
+          # Modo SESSION (Supervisionado com keepalive e save a cada 5 minutos)
           DURATION_MINUTES="$DURATION_INPUT"
           INTERVAL_SECONDS=300
           TOTAL_SECONDS=$((DURATION_MINUTES * 60))
@@ -90,7 +76,6 @@ jobs:
 
           echo "=================================================================="
           echo ">>> INICIANDO SESSÃO SUPERVISIONADA DE ${DURATION_MINUTES} MINUTOS"
-          echo ">>> Início: 11:45 BRT | Fim previsto: 13:45 BRT"
           echo "=================================================================="
           
           # Iniciar serviços e aplicar persistência segura
@@ -98,23 +83,16 @@ jobs:
 
           echo ">>> Mantendo conexão ativa na nuvem e salvando mundo a cada 5 minutos..."
           while [ "$ELAPSED" -lt "$TOTAL_SECONDS" ]; do
-            # Interromper se já atingiu ou ultrapassou 13:45 BRT
-            NOW_BRT_HM=$(TZ="America/Sao_Paulo" date +%H%M 2>/dev/null || date +%H%M)
-            if [ "$NOW_BRT_HM" -ge 1345 ]; then
-              echo "[$(date '+%Y-%m-%d %H:%M:%S')] Horário limite de 13:45 BRT atingido (${NOW_BRT_HM}). Interrompendo sessão para encerramento..."
-              break
-            fi
-
             sleep "$INTERVAL_SECONDS"
             ELAPSED=$((ELAPSED + INTERVAL_SECONDS))
             REMAINING=$(( (TOTAL_SECONDS - ELAPSED) / 60 ))
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Keepalive ativo | ${REMAINING} minutos restantes | Hora atual BRT: $(TZ="America/Sao_Paulo" date +%H:%M)..."
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Keepalive ativo | ${REMAINING} minutos restantes..."
             
             # Garante persistência em disco via RCON save-all flush e renova sessão SSH
             gh codespace ssh -c "$CODESPACE_NAME" -- "cd /workspaces/minecraft_server && ./manager.sh save && ./manager.sh status" || true
           done
 
-          echo ">>> Duração total da sessão (${DURATION_MINUTES}m ou 13:45 BRT) atingida com sucesso!"
+          echo ">>> Duração total da sessão (${DURATION_MINUTES}m) atingida com sucesso!"
 
       - name: Graceful Shutdown & Cloud Backup
         if: always()
@@ -136,7 +114,7 @@ jobs:
 
           if [ -n "$CODESPACE_NAME" ]; then
             echo "=================================================================="
-            echo ">>> HORÁRIO LIMITE ATINGIDO (13:45 BRT)"
+            echo ">>> FIM DA SESSÃO PROGRAMADA"
             echo ">>> REALIZANDO SALVAMENTO SEGURO, BACKUP E DESLIGAMENTO AUTOMÁTICO..."
             echo "=================================================================="
             gh codespace ssh -c "$CODESPACE_NAME" -- "cd /workspaces/minecraft_server && ./manager.sh stop-backup" || true
