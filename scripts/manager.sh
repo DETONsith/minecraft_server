@@ -303,7 +303,7 @@ EOF
 
                 if command -v tmux &>/dev/null; then
                     tmux kill-session -t mc 2>/dev/null || true
-                    tmux new-session -d -s mc "bash -c '\"$MC_SERVER_DIR/start_server.sh\" \"$JAVA_EXEC\" \"$MIN_RAM\" \"$MAX_RAM\" \"$(basename "$FORGE_JAR")\" 2>&1 | tee \"$MC_SERVER_DIR/logs/server_process.log\"; echo Server finished; sleep 86400'"
+                    tmux new-session -d -s mc "\"$MC_SERVER_DIR/start_server.sh\" \"$JAVA_EXEC\" \"$MIN_RAM\" \"$MAX_RAM\" \"$(basename "$FORGE_JAR")\""
                 else
                     setsid nohup "$MC_SERVER_DIR/start_server.sh" "$JAVA_EXEC" "$MIN_RAM" "$MAX_RAM" "$(basename "$FORGE_JAR")" > "$MC_SERVER_DIR/logs/server_process.log" 2>&1 < /dev/null &
                     disown $! 2>/dev/null || true
