@@ -212,8 +212,13 @@ start_services() {
 
         if [ -n "$PLAYIT_BIN" ]; then
             if ! pgrep -f "playit" > /dev/null; then
-                nohup "$PLAYIT_BIN" --secret-path "$ROOT_DIR/config/playit.toml" --socket-path "$user_socket" -l /tmp/playit.log > /tmp/playit_stdout.log 2>&1 < /dev/null &
-                disown $! 2>/dev/null || true
+                if command -v tmux &>/dev/null; then
+                    tmux kill-session -t playit 2>/dev/null || true
+                    tmux new-session -d -s playit "$PLAYIT_BIN --secret-path '$ROOT_DIR/config/playit.toml' --socket-path '$user_socket' -l /tmp/playit.log"
+                else
+                    setsid nohup "$PLAYIT_BIN" --secret-path "$ROOT_DIR/config/playit.toml" --socket-path "$user_socket" -l /tmp/playit.log > /tmp/playit_stdout.log 2>&1 < /dev/null &
+                    disown $! 2>/dev/null || true
+                fi
                 sleep 2
                 echo -e "${GREEN}OK${NC}"
             else
@@ -274,22 +279,31 @@ start_services() {
                 MAX_RAM="${MAX_RAM:-6G}"
                 
                 # Flags JVM otimizadas para Stoneblock / Java 8 G1GC e auto-confirm do Forge
-                nohup "$JAVA_EXEC" \
-                    -Xms"$MIN_RAM" \
-                    -Xmx"$MAX_RAM" \
-                    -Dfml.queryResult=confirm \
-                    -XX:+UseG1GC \
-                    -XX:+UnlockExperimentalVMOptions \
-                    -XX:MaxGCPauseMillis=100 \
-                    -XX:+DisableExplicitGC \
-                    -XX:TargetSurvivorRatio=90 \
-                    -XX:G1NewSizePercent=35 \
-                    -XX:G1MaxNewSizePercent=60 \
-                    -XX:G1ReservePercent=15 \
-                    -XX:G1MixedGCCountTarget=4 \
-                    -XX:InitiatingHeapOccupancyPercent=15 \
-                    -jar "$(basename "$FORGE_JAR")" nogui > "$MC_SERVER_DIR/logs/server_process.log" 2>&1 < /dev/null &
-                disown $! 2>/dev/null || true
+                JVM_ARGS=(
+                    -Xms"$MIN_RAM"
+                    -Xmx"$MAX_RAM"
+                    -Dfml.queryResult=confirm
+                    -XX:+UseG1GC
+                    -XX:+UnlockExperimentalVMOptions
+                    -XX:MaxGCPauseMillis=100
+                    -XX:+DisableExplicitGC
+                    -XX:TargetSurvivorRatio=90
+                    -XX:G1NewSizePercent=35
+                    -XX:G1MaxNewSizePercent=60
+                    -XX:G1ReservePercent=15
+                    -XX:G1MixedGCCountTarget=4
+                    -XX:InitiatingHeapOccupancyPercent=15
+                )
+
+                if command -v tmux &>/dev/null; then
+                    tmux kill-session -t mc 2>/dev/null || true
+                    tmux new-session -d -s mc "cd '$MC_SERVER_DIR' && '$JAVA_EXEC' ${JVM_ARGS[*]} -jar '$(basename "$FORGE_JAR")' nogui 2>&1 | tee '$MC_SERVER_DIR/logs/server_process.log'"
+                else
+                    setsid nohup "$JAVA_EXEC" \
+                        "${JVM_ARGS[@]}" \
+                        -jar "$(basename "$FORGE_JAR")" nogui > "$MC_SERVER_DIR/logs/server_process.log" 2>&1 < /dev/null &
+                    disown $! 2>/dev/null || true
+                fi
                 
                 cd "$ROOT_DIR"
                 echo -e "${GREEN}OK (Java 8: $JAVA_EXEC | RAM: $MIN_RAM-$MAX_RAM)${NC}"
@@ -387,6 +401,7 @@ stop_services() {
             echo -e "${YELLOW}Tempo limite excedido. Forçando encerramento final...${NC}"
             pkill -9 -f "java" || true
         fi
+        tmux kill-session -t mc 2>/dev/null || true
     fi
 
     # 2. Crafty Controller
@@ -402,6 +417,7 @@ stop_services() {
     if ps aux | grep -v grep | grep -qE "playitd|/playit"; then
         echo -n "Parando Playit.gg... "
         pkill -f "playit" 2>/dev/null || true
+        tmux kill-session -t playit 2>/dev/null || true
         echo -e "${GREEN}OK${NC}"
     fi
 
