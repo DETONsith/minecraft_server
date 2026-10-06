@@ -25,7 +25,7 @@
   "postCreateCommand": "bash ./scripts/setup.sh",
   "customizations": {
     "codespaces": {
-      "idleTimeoutMinutes": 120
+      "idleTimeoutMinutes": 240
     }
   }
 }
