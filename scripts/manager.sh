@@ -286,7 +286,10 @@ JAR_FILE="$4"
 exec "$JAVA_BIN" \
     -Xms"$MIN_MEM" \
     -Xmx"$MAX_MEM" \
+    -XX:MaxMetaspaceSize=384M \
+    -XX:CompressedClassSpaceSize=128M \
     -Dfml.queryResult=confirm \
+    -Dfml.doNotBackup=true \
     -XX:+UseG1GC \
     -XX:+UnlockExperimentalVMOptions \
     -XX:MaxGCPauseMillis=100 \
