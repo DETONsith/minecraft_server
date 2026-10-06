@@ -38,13 +38,9 @@ echo "[$(date '+%Y-%m-%d %H:%M:%S')] Watchdog de persistência contínua e desli
 while true; do
     sleep 60
 
-    # 1. Autosave periódico e flush no disco a cada 60s
+    # 1. Sincronização segura de disco a cada 60s (o Minecraft salva chunks internamente no loop principal)
     if ps aux | grep -v grep | grep -q "java"; then
-        if [ -f "$SCRIPT_DIR/rcon.py" ]; then
-            python3 "$SCRIPT_DIR/rcon.py" "save-all flush" >> "$LOG_FILE" 2>&1 || true
-        fi
         sync
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [AUTO-SAVE] Chunks e entidades gravados em disco." >> "$LOG_FILE"
     fi
 
     # 2. Gatilho de Desligamento Automático no Horário Programado (13:45 BRT)
