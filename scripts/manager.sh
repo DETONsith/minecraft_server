@@ -170,9 +170,6 @@ optimize_all_instances() {
     if [ -f "$SCRIPT_DIR/optimize_server.sh" ]; then
         bash "$SCRIPT_DIR/optimize_server.sh" -q
     fi
-    if [ -f "$SCRIPT_DIR/fix_player_uuids.py" ] && [ -d "$WORKSPACE_DIR/minecraft/server/world" ]; then
-        python3 "$SCRIPT_DIR/fix_player_uuids.py" "$WORKSPACE_DIR/minecraft/server/world" "$HOME/.sklauncher/instances/stoneblock" > /dev/null 2>&1 || true
-    fi
 }
 
 start_watchdog() {

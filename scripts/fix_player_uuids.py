@@ -172,7 +172,7 @@ def save_nbt_file(filepath, root_name, root_tag):
         f.write(raw_data)
 
 
-def fix_world_uuids(world_dir, instance_dir=None):
+def fix_world_uuids(world_dir, instance_dir=None, force=False):
     if not os.path.isdir(world_dir):
         print(f"Erro: Diretório do mundo '{world_dir}' não encontrado.")
         return
@@ -237,66 +237,72 @@ def fix_world_uuids(world_dir, instance_dir=None):
         old_dat = os.path.join(playerdata_dir, f"{old_u}.dat")
         new_dat = os.path.join(playerdata_dir, f"{new_u}.dat")
 
-        source_dat = None
-        if os.path.isfile(old_dat):
-            source_dat = old_dat
-        elif instance_dir and os.path.isfile(os.path.join(instance_dir, "saves", "New World", "playerdata", f"{old_u}.dat")):
-            source_dat = os.path.join(instance_dir, "saves", "New World", "playerdata", f"{old_u}.dat")
+        if os.path.isfile(new_dat) and not force:
+            print(f"  ℹ Playerdata {new_u}.dat ({name}) já existe. Ignorando para não sobrescrever o progresso.")
+        else:
+            source_dat = None
+            if os.path.isfile(old_dat):
+                source_dat = old_dat
+            elif instance_dir and os.path.isfile(os.path.join(instance_dir, "saves", "New World", "playerdata", f"{old_u}.dat")):
+                source_dat = os.path.join(instance_dir, "saves", "New World", "playerdata", f"{old_u}.dat")
 
-        if source_dat and os.path.isfile(source_dat):
-            try:
-                root_name, root_tag = parse_nbt_file(source_dat)
-                compound = root_tag[1]
-                
-                # Calcular UUIDMost e UUIDLeast para o novo UUID
-                new_uuid_obj = uuid.UUID(new_u)
-                new_most, new_least = struct.unpack('>qq', new_uuid_obj.bytes)
-                
-                # Atualizar tags internas do NBT
-                compound['UUIDMost'] = (NBT.TAG_LONG, new_most)
-                compound['UUIDLeast'] = (NBT.TAG_LONG, new_least)
-                
-                # Salvar novo .dat
-                save_nbt_file(new_dat, root_name, root_tag)
-                inv_count = len(compound.get('Inventory', (None, (None, [])))[1][1])
-                print(f"  ✓ Playerdata convertido e salvo em {new_u}.dat ({name}) - {inv_count} itens no inventário")
-            except Exception as e:
-                print(f"  ✗ Erro ao converter playerdata {source_dat}: {e}")
-                # Fallback para cópia direta se falhar
-                shutil.copy2(source_dat, new_dat)
+            if source_dat and os.path.isfile(source_dat):
+                try:
+                    root_name, root_tag = parse_nbt_file(source_dat)
+                    compound = root_tag[1]
+                    
+                    # Calcular UUIDMost e UUIDLeast para o novo UUID
+                    new_uuid_obj = uuid.UUID(new_u)
+                    new_most, new_least = struct.unpack('>qq', new_uuid_obj.bytes)
+                    
+                    # Atualizar tags internas do NBT
+                    compound['UUIDMost'] = (NBT.TAG_LONG, new_most)
+                    compound['UUIDLeast'] = (NBT.TAG_LONG, new_least)
+                    
+                    # Salvar novo .dat
+                    save_nbt_file(new_dat, root_name, root_tag)
+                    inv_count = len(compound.get('Inventory', (None, (None, [])))[1][1])
+                    print(f"  ✓ Playerdata convertido e salvo em {new_u}.dat ({name}) - {inv_count} itens no inventário")
+                except Exception as e:
+                    print(f"  ✗ Erro ao converter playerdata {source_dat}: {e}")
+                    # Fallback para cópia direta se falhar
+                    shutil.copy2(source_dat, new_dat)
 
         # cyclic inventory
         old_cyc = os.path.join(playerdata_dir, f"{old_u}.cyclicinvo")
         new_cyc = os.path.join(playerdata_dir, f"{new_u}.cyclicinvo")
-        if not os.path.isfile(old_cyc) and instance_dir:
-            inst_cyc = os.path.join(instance_dir, "saves", "New World", "playerdata", f"{old_u}.cyclicinvo")
-            if os.path.isfile(inst_cyc):
-                old_cyc = inst_cyc
-        if os.path.isfile(old_cyc):
-            shutil.copy2(old_cyc, new_cyc)
-            print(f"  ✓ Cyclic inventory copiado para {new_u}.cyclicinvo ({name})")
+        if not os.path.isfile(new_cyc) or force:
+            if not os.path.isfile(old_cyc) and instance_dir:
+                inst_cyc = os.path.join(instance_dir, "saves", "New World", "playerdata", f"{old_u}.cyclicinvo")
+                if os.path.isfile(inst_cyc):
+                    old_cyc = inst_cyc
+            if os.path.isfile(old_cyc):
+                shutil.copy2(old_cyc, new_cyc)
+                print(f"  ✓ Cyclic inventory copiado para {new_u}.cyclicinvo ({name})")
 
         # stats .json
         old_stat = os.path.join(stats_dir, f"{old_u}.json")
         new_stat = os.path.join(stats_dir, f"{new_u}.json")
-        if not os.path.isfile(old_stat) and instance_dir:
-            inst_stat = os.path.join(instance_dir, "saves", "New World", "stats", f"{old_u}.json")
-            if os.path.isfile(inst_stat):
-                old_stat = inst_stat
-        if os.path.isfile(old_stat):
-            shutil.copy2(old_stat, new_stat)
-            print(f"  ✓ Stats copiados para {new_u}.json ({name})")
+        if not os.path.isfile(new_stat) or force:
+            if not os.path.isfile(old_stat) and instance_dir:
+                inst_stat = os.path.join(instance_dir, "saves", "New World", "stats", f"{old_u}.json")
+                if os.path.isfile(inst_stat):
+                    old_stat = inst_stat
+            if os.path.isfile(old_stat):
+                shutil.copy2(old_stat, new_stat)
+                print(f"  ✓ Stats copiados para {new_u}.json ({name})")
 
         # advancements .json
         old_adv = os.path.join(advancements_dir, f"{old_u}.json")
         new_adv = os.path.join(advancements_dir, f"{new_u}.json")
-        if not os.path.isfile(old_adv) and instance_dir:
-            inst_adv = os.path.join(instance_dir, "saves", "New World", "advancements", f"{old_u}.json")
-            if os.path.isfile(inst_adv):
-                old_adv = inst_adv
-        if os.path.isfile(old_adv):
-            shutil.copy2(old_adv, new_adv)
-            print(f"  ✓ Advancements copiados para {new_u}.json ({name})")
+        if not os.path.isfile(new_adv) or force:
+            if not os.path.isfile(old_adv) and instance_dir:
+                inst_adv = os.path.join(instance_dir, "saves", "New World", "advancements", f"{old_u}.json")
+                if os.path.isfile(inst_adv):
+                    old_adv = inst_adv
+            if os.path.isfile(old_adv):
+                shutil.copy2(old_adv, new_adv)
+                print(f"  ✓ Advancements copiados para {new_u}.json ({name})")
 
         # data directory trackers
         if os.path.isdir(data_dir):
@@ -305,8 +311,9 @@ def fix_world_uuids(world_dir, instance_dir=None):
                     old_fpath = os.path.join(data_dir, fname)
                     new_fname = fname.replace(old_u, new_u)
                     new_fpath = os.path.join(data_dir, new_fname)
-                    shutil.copy2(old_fpath, new_fpath)
-                    print(f"  ✓ Data tracker {fname} -> {new_fname}")
+                    if not os.path.isfile(new_fpath) or force:
+                        shutil.copy2(old_fpath, new_fpath)
+                        print(f"  ✓ Data tracker {fname} -> {new_fname}")
 
     # 2. Atualizar JSONs de BetterQuesting e FTB Lib
     target_json_dirs = [
@@ -389,4 +396,5 @@ def fix_world_uuids(world_dir, instance_dir=None):
 if __name__ == "__main__":
     w_dir = sys.argv[1] if len(sys.argv) > 1 else "/home/giovani-goncalves/projetos/minecraft_server/minecraft/server/world"
     inst_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.expanduser("~/.sklauncher/instances/stoneblock")
-    fix_world_uuids(w_dir, inst_dir)
+    force_mode = "--force" in sys.argv
+    fix_world_uuids(w_dir, inst_dir, force=force_mode)
