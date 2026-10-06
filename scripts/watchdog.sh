@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# MINECRAFT FAILSAFE CONTINUOUS AUTOSAVE & PERSISTENCE WATCHDOG
-# - Garante salvamento periódico via RCON e sincronização em disco a cada 60s
-# - Gatilho de desligamento automático no horário programado (padrão: 13h45 BRT)
+# MINECRAFT FAILSAFE CONTINUOUS AUTOSAVE & IDLE WATCHDOG
+# - Garante salvamento periódico e sincronização em disco a cada 60s
+# - Desliga automaticamente se o servidor ficar X minutos sem jogadores online
 # ==============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -19,10 +19,8 @@ fi
 PID_FILE="/tmp/minecraft_watchdog.pid"
 LOG_FILE="/tmp/minecraft_watchdog.log"
 
-AUTO_SHUTDOWN_ENABLED="${AUTO_SHUTDOWN_ENABLED:-true}"
-AUTO_SHUTDOWN_TIME="${AUTO_SHUTDOWN_TIME:-13:45}"
-AUTO_SHUTDOWN_TZ="${AUTO_SHUTDOWN_TZ:-America/Sao_Paulo}"
-AUTO_SHUTDOWN_DAYS="${AUTO_SHUTDOWN_DAYS:-1-5}" # 1=Segunda .. 5=Sexta
+IDLE_SHUTDOWN_ENABLED="${IDLE_SHUTDOWN_ENABLED:-true}"
+IDLE_TIMEOUT_MINUTES="${IDLE_TIMEOUT_MINUTES:-10}"
 
 # Autodetectar nome do Codespace se necessário
 if [ -z "$CODESPACE_NAME" ] && command -v gh &>/dev/null; then
@@ -33,47 +31,58 @@ if [ -z "$CODESPACE_NAME" ] && command -v gh &>/dev/null; then
 fi
 
 echo "$$" > "$PID_FILE"
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Watchdog de persistência contínua e desligamento automático iniciado (Gatilho: ${AUTO_SHUTDOWN_TIME} ${AUTO_SHUTDOWN_TZ})." >> "$LOG_FILE"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] Watchdog iniciado (Desligamento por inatividade: ${IDLE_TIMEOUT_MINUTES} min sem jogadores)." >> "$LOG_FILE"
+
+IDLE_MINUTES=0
 
 while true; do
     sleep 60
 
-    # 1. Sincronização segura de disco a cada 60s (o Minecraft salva chunks internamente no loop principal)
+    # 1. Sincronização segura de disco a cada 60s
     if ps aux | grep -v grep | grep -q "java"; then
         sync
+    else
+        # Se Java nem está rodando, zerar contador
+        IDLE_MINUTES=0
+        continue
     fi
 
-    # 2. Gatilho de Desligamento Automático no Horário Programado (13:45 BRT)
-    if [ "$AUTO_SHUTDOWN_ENABLED" = "true" ]; then
-        CURRENT_DOW=$(TZ="$AUTO_SHUTDOWN_TZ" date +%u 2>/dev/null || date +%u) # 1=Mon .. 7=Sun
-        CURRENT_HM=$(TZ="$AUTO_SHUTDOWN_TZ" date +%H:%M 2>/dev/null || date +%H:%M)
-
-        IS_SCHEDULED_DAY=false
-        if [ "$AUTO_SHUTDOWN_DAYS" = "*" ] || [ "$AUTO_SHUTDOWN_DAYS" = "all" ]; then
-            IS_SCHEDULED_DAY=true
-        elif [[ "$AUTO_SHUTDOWN_DAYS" =~ ^([1-7])-([1-7])$ ]]; then
-            START_D="${BASH_REMATCH[1]}"
-            END_D="${BASH_REMATCH[2]}"
-            if [ "$CURRENT_DOW" -ge "$START_D" ] && [ "$CURRENT_DOW" -le "$END_D" ]; then
-                IS_SCHEDULED_DAY=true
-            fi
-        fi
-
-        if [ "$IS_SCHEDULED_DAY" = true ] && [ "$CURRENT_HM" = "$AUTO_SHUTDOWN_TIME" ]; then
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GATILHO 13:45] Horário limite atingido (${AUTO_SHUTDOWN_TIME} ${AUTO_SHUTDOWN_TZ})." >> "$LOG_FILE"
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Executando graceful shutdown e backup via manager.sh..." >> "$LOG_FILE"
+    # 2. Monitoramento de jogadores e desligamento por inatividade
+    if [ "$IDLE_SHUTDOWN_ENABLED" = "true" ]; then
+        RCON_RESP="$(python3 "$SCRIPT_DIR/rcon.py" list 2>/dev/null || true)"
+        
+        # Verificar se o RCON respondeu (servidor totalmente inicializado e online)
+        if echo "$RCON_RESP" | grep -q "players online"; then
+            PLAYER_COUNT=$(echo "$RCON_RESP" | grep -oE '[0-9]+/[0-9]+' | head -n1 | cut -d'/' -f1)
             
-            # Executa o fluxo de salvamento gracioso e backup do manager.sh
-            bash "$SCRIPT_DIR/manager.sh" stop-backup >> "$LOG_FILE" 2>&1 || true
+            if [ -n "$PLAYER_COUNT" ] && [ "$PLAYER_COUNT" -eq 0 ]; then
+                IDLE_MINUTES=$((IDLE_MINUTES + 1))
+                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Servidor vazio: 0 jogadores online ($IDLE_MINUTES/$IDLE_TIMEOUT_MINUTES min)." >> "$LOG_FILE"
 
-            # Desliga o Codespace / Máquina
-            if [ -n "$CODESPACE_NAME" ] && command -v gh &>/dev/null; then
-                echo "[$(date '+%Y-%m-%d %H:%M:%S')] Solicitando encerramento do Codespace ($CODESPACE_NAME)..." >> "$LOG_FILE"
-                gh codespace stop -c "$CODESPACE_NAME" >> "$LOG_FILE" 2>&1 || true
+                if [ "$IDLE_MINUTES" -ge "$IDLE_TIMEOUT_MINUTES" ]; then
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [GATILHO INATIVIDADE] Servidor atingiu ${IDLE_TIMEOUT_MINUTES} minutos sem jogadores. Encerrando..." >> "$LOG_FILE"
+                    
+                    # Salva e encerra serviços com backup
+                    bash "$SCRIPT_DIR/manager.sh" stop-backup >> "$LOG_FILE" 2>&1 || true
+
+                    # Desliga o Codespace / Máquina
+                    if [ -n "$CODESPACE_NAME" ] && command -v gh &>/dev/null; then
+                        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Solicitando encerramento do Codespace ($CODESPACE_NAME)..." >> "$LOG_FILE"
+                        gh codespace stop -c "$CODESPACE_NAME" >> "$LOG_FILE" 2>&1 || true
+                    fi
+
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Desligando ambiente local..." >> "$LOG_FILE"
+                    sudo shutdown -h now 2>/dev/null || exit 0
+                fi
+            elif [ -n "$PLAYER_COUNT" ] && [ "$PLAYER_COUNT" -gt 0 ]; then
+                if [ "$IDLE_MINUTES" -gt 0 ]; then
+                    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Jogador ativo detectado ($PLAYER_COUNT online). Contador de inatividade zerado." >> "$LOG_FILE"
+                fi
+                IDLE_MINUTES=0
             fi
-
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] Desligando ambiente local..." >> "$LOG_FILE"
-            sudo shutdown -h now 2>/dev/null || exit 0
+        else
+            # RCON ainda não respondeu (servidor iniciando ou carregando mods)
+            IDLE_MINUTES=0
         fi
     fi
 done
