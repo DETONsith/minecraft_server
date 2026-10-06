@@ -64,8 +64,12 @@ if [ -n "$EXISTING_JAVA" ]; then
     exit 0
 fi
 
-# 4. Tentar instalação nativa via APT (Adoptium & OpenJDK PPA)
-if command -v apt-get &> /dev/null; then
+# 4. Tentar instalação nativa via APK (Alpine Linux) ou APT (Ubuntu/Debian)
+if command -v apk &> /dev/null; then
+    echo -e "${YELLOW}-> Instalando pacotes Java 8 nativos via APK (Alpine)...${NC}"
+    $SUDO apk update || true
+    $SUDO apk add --no-cache openjdk8 openjdk8-jre || true
+elif command -v apt-get &> /dev/null; then
     echo -e "${YELLOW}-> Instalando pacotes Java 8 nativos via APT...${NC}"
     set +e
     $SUDO apt-get update -y || true
